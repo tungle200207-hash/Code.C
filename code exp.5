@@ -1,0 +1,216 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define FILE_NAME "students.txt"
+
+typedef struct {
+    char  id[11];
+    char  name[101];
+    float gpa;
+} Student;
+
+typedef struct Node {
+    Student data;
+    struct Node *next;
+} Node;
+
+Node *createNode(Student s);
+int   addTail(Node **head, Student s);
+void  freeList(Node **head);
+int   loadList(const char *filename, Node **head);
+void  displayList(const Node *head);
+int   findStudent(const Node *head, const char *id);
+int   saveList(const char *filename, const Node *head);
+int   readLine(char *buf, int size);
+
+int main() {
+    Node *head = NULL;
+    Student s;
+    char idBuf[128], nameBuf[128], gpaBuf[128], extra[16];
+    float gpa;
+    int count;
+
+    count = loadList(FILE_NAME, &head);
+    printf("Loaded %d student(s).\n", count);
+    if (count > 0) {
+        displayList(head);
+    }
+
+    printf("Enter new student ID (press Enter to skip): ");
+    if (!readLine(idBuf, sizeof(idBuf)) || idBuf[0] == '\0') {
+        freeList(&head);
+        return 0;
+    }
+
+    if (strlen(idBuf) > 10 || strchr(idBuf, '|') != NULL) {
+        printf("Invalid ID (max 10 characters, no '|').\n");
+        freeList(&head);
+        return 1;
+    }
+    if (findStudent(head, idBuf)) {
+        printf("Error: student ID %s already exists.\n", idBuf);
+        freeList(&head);
+        return 1;
+    }
+
+    printf("Enter full name: ");
+    if (!readLine(nameBuf, sizeof(nameBuf)) || nameBuf[0] == '\0'
+        || strlen(nameBuf) > 100 || strchr(nameBuf, '|') != NULL) {
+        printf("Invalid name (1-100 characters, no '|').\n");
+        freeList(&head);
+        return 1;
+    }
+
+    printf("Enter GPA: ");
+    if (!readLine(gpaBuf, sizeof(gpaBuf))
+        || sscanf(gpaBuf, "%f %15s", &gpa, extra) != 1
+        || gpa < 0.0f || gpa > 4.0f) {
+        printf("Invalid GPA (must be a number from 0.0 to 4.0).\n");
+        freeList(&head);
+        return 1;
+    }
+
+    strcpy(s.id, idBuf);
+    strcpy(s.name, nameBuf);
+    s.gpa = gpa;
+
+    if (!addTail(&head, s)) {
+        printf("Error: memory allocation failed.\n");
+        freeList(&head);
+        return 1;
+    }
+
+    if (saveList(FILE_NAME, head)) {
+        printf("Student added and saved successfully.\n");
+    } else {
+        printf("Error: could not save the list to %s.\n", FILE_NAME);
+    }
+
+    freeList(&head);   
+    return 0;
+}
+
+int readLine(char *buf, int size) {
+    int c;
+
+    if (fgets(buf, size, stdin) == NULL) {
+        return 0;
+    }
+    if (strchr(buf, '\n') != NULL) {
+        buf[strcspn(buf, "\n")] = '\0';
+    } else {
+        while ((c = getchar()) != '\n' && c != EOF);  
+    }
+    return 1;
+}
+
+Node *createNode(Student s) {
+    Node *node = (Node *)malloc(sizeof(Node));
+    if (node == NULL) {
+        return NULL;
+    }
+    node->data = s;
+    node->next = NULL;
+    return node;
+}
+
+int addTail(Node **head, Student s) {
+    Node *newNode = createNode(s);
+    Node *p;
+
+    if (newNode == NULL) {
+        return 0;
+    }
+
+    if (*head == NULL) {          
+        *head = newNode;
+        return 1;
+    }
+
+    p = *head;
+    while (p->next != NULL) {
+        p = p->next;
+    }
+    p->next = newNode;
+    return 1;
+}
+
+void freeList(Node **head) {
+    Node *temp;
+
+    while (*head != NULL) {
+        temp = *head;
+        *head = (*head)->next;
+        free(temp);
+    }
+}
+
+int loadList(const char *filename, Node **head) {
+    FILE *fp = fopen(filename, "r");
+    char line[256];
+    int count = 0;
+
+    if (fp == NULL) {
+        return 0;                 
+    }
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        Student s;
+
+        if (sscanf(line, "%10[^|]|%100[^|]|%f", s.id, s.name, &s.gpa) != 3) {
+            continue;            
+        }
+        if (findStudent(*head, s.id)) {
+            continue;            
+        }
+        if (!addTail(head, s)) {
+            printf("Error: memory allocation failed while loading.\n");
+            break;
+        }
+        count++;
+    }
+
+    fclose(fp);
+    return count;
+}
+
+void displayList(const Node *head) {
+    while (head != NULL) {
+        printf("[%s] %s - GPA: %.2f\n",
+               head->data.id, head->data.name, head->data.gpa);
+        head = head->next;
+    }
+}
+
+int findStudent(const Node *head, const char *id) {
+    while (head != NULL) {
+        if (strcmp(head->data.id, id) == 0) {
+            return 1;
+        }
+        head = head->next;
+    }
+    return 0;
+}
+
+int saveList(const char *filename, const Node *head) {
+    FILE *fp = fopen(filename, "w");
+
+    if (fp == NULL) {
+        return 0;
+    }
+
+    while (head != NULL) {
+        if (fprintf(fp, "%s|%s|%.2f\n",
+                    head->data.id, head->data.name, head->data.gpa) < 0) {
+            fclose(fp);
+            return 0;            
+        }
+        head = head->next;
+    }
+
+    if (fclose(fp) != 0) {        
+        return 0;
+    }
+    return 1;
+}
